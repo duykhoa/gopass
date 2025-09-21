@@ -115,7 +115,7 @@ func main() {
 
 	decryptBtn = widget.NewButton("Decrypt", func() {
 		if selectedIdx < 0 || selectedIdx >= len(entries) {
-			dialog.ShowError(fmt.Errorf("No entry selected"), w)
+			dialog.ShowError(fmt.Errorf("no entry selected"), w)
 			return
 		}
 		entry := entries[selectedIdx]
