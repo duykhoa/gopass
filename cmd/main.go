@@ -13,12 +13,13 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/duykhoa/gopass/internal/gpg"
+
 	// ...existing code...
+	"github.com/duykhoa/gopass/internal/config"
+	"github.com/duykhoa/gopass/internal/git"
 )
 
-var passwordStoreDir = "~/.password-store"
-
-const gpgIdFile = ".gpg-id"
+// Removed local passwordStoreDir and gpgIdFile
 
 func expandHome(path string) string {
 	if strings.HasPrefix(path, "~") {
@@ -29,7 +30,7 @@ func expandHome(path string) string {
 }
 
 func listPasswordEntries() ([]string, error) {
-	dir := expandHome(passwordStoreDir)
+	dir := config.PasswordStoreDir()
 	var entries []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -89,6 +90,17 @@ func main() {
 		status.SetText("Entries refreshed")
 	})
 
+	syncBtn := widget.NewButton("Sync", func() {
+		go func() {
+			err := git.SyncWithRemote(config.PasswordStoreDir())
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("git sync failed: %w", err), w)
+			} else {
+				dialog.ShowInformation("Git Sync", "Sync completed successfully", w)
+			}
+		}()
+	})
+
 	// Helper to show decrypted output in a selectable/copyable dialog
 	showDecryptedDialog := func(parent fyne.Window, text string) {
 		entry := widget.NewMultiLineEntry()
@@ -107,7 +119,7 @@ func main() {
 			return
 		}
 		entry := entries[selectedIdx]
-		gpgFile := filepath.Join(expandHome(passwordStoreDir), entry+".gpg")
+		gpgFile := filepath.Join(expandHome(config.PasswordStoreDir()), entry+".gpg")
 		usr, _ := os.UserHomeDir()
 		cachePath := filepath.Join(usr, ".gopass", "passphrase.cache")
 		pass, valid, _ := gpg.DecryptCachedPassphrase(cachePath)
@@ -151,6 +163,18 @@ func main() {
 		fyne.NewMenu("File",
 			fyne.NewMenuItem("Quit", func() { a.Quit() }),
 		),
+		fyne.NewMenu("Git",
+			fyne.NewMenuItem("Sync", func() {
+				go func() {
+					err := git.SyncWithRemote(config.PasswordStoreDir())
+					if err != nil {
+						dialog.ShowError(fmt.Errorf("git sync failed: %w", err), w)
+					} else {
+						dialog.ShowInformation("Git Sync", "Sync completed successfully", w)
+					}
+				}()
+			}),
+		),
 	)
 	w.SetMainMenu(menu)
 
@@ -158,7 +182,7 @@ func main() {
 	entriesListScroll.SetMinSize(fyne.NewSize(0, 5*24))
 
 	mainContent := container.NewVBox(
-		container.NewHBox(refreshBtn, decryptBtn),
+		container.NewHBox(refreshBtn, decryptBtn, syncBtn),
 		widget.NewLabel("Password Entries:"),
 		entriesListScroll,
 	)
