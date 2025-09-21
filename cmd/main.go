@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -54,8 +55,6 @@ func main() {
 	}
 
 	status := widget.NewLabel("")
-	passphraseEntry := widget.NewPasswordEntry()
-	passphraseEntry.SetPlaceHolder("Enter GPG passphrase")
 
 	var entries []string
 	entries, _ = listPasswordEntries()
@@ -90,20 +89,61 @@ func main() {
 		status.SetText("Entries refreshed")
 	})
 
+	// Helper to show decrypted output in a selectable/copyable dialog
+	showDecryptedDialog := func(parent fyne.Window, text string) {
+		entry := widget.NewMultiLineEntry()
+		entry.SetText(text)
+		entry.Disable()
+		entry.Wrapping = fyne.TextWrapWord
+		content := container.NewVBox(entry)
+		d := dialog.NewCustom("Decrypted", "OK", content, parent)
+		d.Resize(fyne.NewSize(600, 400))
+		d.Show()
+	}
+
 	decryptBtn = widget.NewButton("Decrypt", func() {
 		if selectedIdx < 0 || selectedIdx >= len(entries) {
 			dialog.ShowError(fmt.Errorf("No entry selected"), w)
 			return
 		}
 		entry := entries[selectedIdx]
-		pass := passphraseEntry.Text
 		gpgFile := filepath.Join(expandHome(passwordStoreDir), entry+".gpg")
+		usr, _ := os.UserHomeDir()
+		cachePath := filepath.Join(usr, ".gopass", "passphrase.cache")
+		pass, valid, _ := gpg.DecryptCachedPassphrase(cachePath)
+		if !valid {
+			// Prompt for passphrase
+			passDialog := widget.NewPasswordEntry()
+			d := dialog.NewForm("Enter GPG Passphrase", "OK", "Cancel",
+				[]*widget.FormItem{widget.NewFormItem("Passphrase", passDialog)},
+				func(ok bool) {
+					if !ok {
+						return
+					}
+					pass = passDialog.Text
+					// Cache for 30 minutes
+					if err := gpg.EncryptAndCachePassphrase(pass, cachePath, 30*time.Minute); err != nil {
+						fmt.Printf("[ERROR] Failed to cache passphrase: %v\n", err)
+						dialog.ShowError(fmt.Errorf("Failed to cache passphrase: %w", err), w)
+						// Proceed without caching
+					}
+
+					plaintext, err := gpg.DecryptGPGFileWithKey(gpgFile, pass)
+					if err != nil {
+						dialog.ShowError(err, w)
+						return
+					}
+					showDecryptedDialog(w, plaintext)
+				}, w)
+			d.Show()
+			return
+		}
 		plaintext, err := gpg.DecryptGPGFileWithKey(gpgFile, pass)
 		if err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
-		dialog.ShowInformation("Decrypted", plaintext, w)
+		showDecryptedDialog(w, plaintext)
 	})
 	decryptBtn.Disable()
 
@@ -118,8 +158,6 @@ func main() {
 	entriesListScroll.SetMinSize(fyne.NewSize(0, 5*24))
 
 	mainContent := container.NewVBox(
-		widget.NewLabel("GPG Passphrase:"),
-		passphraseEntry,
 		container.NewHBox(refreshBtn, decryptBtn),
 		widget.NewLabel("Password Entries:"),
 		entriesListScroll,
