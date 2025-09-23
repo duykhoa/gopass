@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// ExportArmoredPrivateKey exports the private key with the given keyID to the given output path in ASCII-armored format.
+// ExportArmoredPrivateKey exports the private key with the given keyID to ~/.gopass/<keyID>.secret.asc in ASCII-armored format.
 // If passphrase is not empty, it will be passed to gpg using --pinentry-mode loopback.
 func ExportArmoredPrivateKey(keyID, outputPath, passphrase string) error {
 	args := []string{"--export-secret-keys", "--armor", keyID}

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -34,7 +35,7 @@ func loadConfig() {
 	gpgIdPath := filepath.Join(passwordStoreDir, ".gpg-id")
 	gpgIdBytes, err := os.ReadFile(gpgIdPath)
 	if err == nil {
-		gpgId = string(gpgIdBytes)
+		gpgId = strings.TrimSpace(string(gpgIdBytes))
 	}
 	// For demo, use a static key. In production, use a secure method.
 	passphraseKey = []byte("gopass-demo-static-key-32bytes!!")

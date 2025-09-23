@@ -16,14 +16,17 @@ test:
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$(GOOS)-amd64 main.go
+	GOOS=$(GOOS) GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$(GOOS)-amd64 cmd/main.go
 
 .PHONY: build-all
 build-all:
 	@for os in linux darwin windows; do \
-		GOOS=$$os GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$$os-amd64 main.go; \
+		GOOS=$$os GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$$os-amd64 cmd/main.go; \
 	done
 
 .PHONY: clean
 clean:
 	rm -rf bin/
+
+integration-test:
+	go test -tags=integration ./internal/service/...

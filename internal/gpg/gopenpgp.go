@@ -5,9 +5,9 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strings"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/duykhoa/gopass/internal/config"
 )
 
 // DecryptGPGFileWithKey decrypts a GPG file using the first private key found in the user's GPG keyring.
@@ -17,15 +17,16 @@ func DecryptGPGFileWithKey(gpgFile, passphrase string) (string, error) {
 		return "", fmt.Errorf("failed to get current user: %w", err)
 	}
 	// Find .gpg-id in the password store directory
-	storeDir := filepath.Dir(gpgFile)
-	gpgIdPath := filepath.Join(storeDir, ".gpg-id")
-	gpgIdData, err := os.ReadFile(gpgIdPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read .gpg-id: %w", err)
-	}
-	keyID := strings.TrimSpace(string(gpgIdData))
+	// storeDir := filepath.Dir(gpgFile)
+	// gpgIdPath := filepath.Join(storeDir, ".gpg-id")
+	// gpgIdData, err := os.ReadFile(gpgIdPath)
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to read .gpg-id: %w", err)
+	// }
+	// keyID := strings.TrimSpace(string(gpgIdData))
+	keyID := config.GPGId()
 	gopassDir := filepath.Join(usr.HomeDir, ".gopass")
-	armoredKeyPath := filepath.Join(gopassDir, keyID+".asc")
+	armoredKeyPath := filepath.Join(gopassDir, keyID+".secret.asc")
 	// If armored key does not exist, export it
 	if _, err := os.Stat(armoredKeyPath); os.IsNotExist(err) {
 		if err := ExportArmoredPrivateKey(keyID, armoredKeyPath, passphrase); err != nil {
@@ -50,7 +51,10 @@ func DecryptGPGFileWithKey(gpgFile, passphrase string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read gpg file: %w", err)
 	}
-	message := crypto.NewPGPMessage(ciphertext)
+	message, err := crypto.NewPGPMessageFromArmored(string(ciphertext))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse armored message: %w", err)
+	}
 	keyring, err := crypto.NewKeyRing(unlockedKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to create keyring: %w", err)
