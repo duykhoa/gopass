@@ -25,9 +25,6 @@ func EncryptWithGPGKey(plaintext []byte, keyID string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gopenpgp encryption failed: %w", err)
 	}
-	armored, err = encrypted.GetArmored()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get armored encrypted message: %w", err)
-	}
-	return []byte(armored), nil
+
+	return encrypted.Data, nil
 }

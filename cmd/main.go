@@ -264,22 +264,10 @@ func main() {
 
 	addEntryBtn := widget.NewButton("Add Entry", func() {
 		showAddOrEditDialog(w, "Add New Entry", "Submit", "Cancel", "", "", nil, func(entryName, templateName string, values map[string]string) {
-			// gpgId := config.GPGId()
-			// home, err := os.UserHomeDir()
-			// if err != nil {
-			// 	dialog.ShowError(fmt.Errorf("Failed to get user home directory: %w", err), w)
-			// 	return
-			// }
-			// armoredKeyPath := filepath.Join(home, ".gopass", gpgId+".public.asc")
-			// if _, err := os.Stat(armoredKeyPath); err != nil {
-			// 	dialog.ShowError(fmt.Errorf("No armored public key file found for recipient '%s' at %s. Please ensure the correct GPG ID is set in your config and the armored key exists (should be named <gpg_id>.public.asc).", gpgId, armoredKeyPath), w)
-			// 	return
-			// }
 			req := service.AddEditRequest{
 				EntryName:    entryName,
 				TemplateName: templateName,
 				Fields:       values,
-				// GPGId:        gpgId,
 			}
 			result := service.AddOrEditEntry(req)
 			if result.Err != nil {
