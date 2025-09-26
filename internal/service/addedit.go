@@ -21,7 +21,6 @@ type AddEditResult struct {
 	Err error
 }
 
-// AddOrEditEntry builds the entry content, encrypts, and stores it in the password store.
 func AddOrEditEntry(req AddEditRequest) AddEditResult {
 	var content strings.Builder
 	if req.TemplateName == "Free Form" {
@@ -61,4 +60,11 @@ func AddOrEditEntry(req AddEditRequest) AddEditResult {
 		return AddEditResult{err}
 	}
 	return AddEditResult{nil}
+}
+
+// DeleteEntry removes the .gpg file for the given entry name from the password store.
+func DeleteEntry(entryName string) error {
+	storeDir := config.PasswordStoreDir()
+	entryPath := filepath.Join(storeDir, entryName+".gpg")
+	return os.Remove(entryPath)
 }

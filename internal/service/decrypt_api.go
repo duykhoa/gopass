@@ -11,16 +11,25 @@ func GetCachedPassphrase() (string, bool) {
 	return pass, valid
 }
 
-// DecryptAndMaybeCacheWithCache is a simplified API for main: handles cache and decryption for an entry.
-func DecryptAndMaybeCacheWithCache(entry, passphrase string, cache bool) DecryptResult {
+// DecryptAndCacheIfOk attempts decryption, and if successful, caches the passphrase.
+func DecryptAndCacheIfOk(entry, passphrase string) DecryptResult {
 	req := DecryptRequest{
 		StoreDir:   config.PasswordStoreDir(),
 		Entry:      entry,
 		Passphrase: passphrase,
-		Cache:      cache,
+		Cache:      false,
 		CachePath:  getCachePath(),
 	}
-	return DecryptAndMaybeCache(req)
+	result := DecryptAndMaybeCache(req)
+	if result.Err == nil && passphrase != "" {
+		CachePassphrase(passphrase)
+	}
+	return result
+}
+
+// CachePassphrase stores the passphrase in the cache file.
+func CachePassphrase(passphrase string) error {
+	return gpg.EncryptAndCachePassphrase(passphrase, getCachePath(), 30*60) // 30 min
 }
 
 func getCachePath() string {

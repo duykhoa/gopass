@@ -15,9 +15,11 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/duykhoa/gopass/internal/config"
-	"github.com/duykhoa/gopass/internal/git"
+
+	// "github.com/duykhoa/gopass/internal/git"
 	"github.com/duykhoa/gopass/internal/gpg"
 	"github.com/duykhoa/gopass/internal/service"
+	"github.com/duykhoa/gopass/internal/store"
 )
 
 func listPasswordEntries() ([]string, error) {
@@ -83,8 +85,8 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 	templateSelect.OnChanged = func(name string) {
 		updateFields(name)
 	}
-	d := dialog.NewCustom(title, "Submit", form, w)
-	form.OnSubmit = func() {
+	var d *dialog.CustomDialog
+	submitBtn := widget.NewButton(okLabel, func() {
 		entryName := entryNameEntry.Text
 		templateName := templateSelect.Selected
 		values := map[string]string{}
@@ -93,8 +95,13 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 		}
 		d.Hide()
 		onSave(entryName, templateName, values)
-	}
-	d.SetDismissText(cancelLabel)
+	})
+	cancelBtn := widget.NewButton(cancelLabel, func() {
+		d.Hide()
+	})
+	btnRow := container.NewHBox(submitBtn, cancelBtn)
+	content := container.NewVBox(form, btnRow)
+	d = dialog.NewCustom(title, "", content, w)
 	d.Resize(fyne.NewSize(500, 400))
 	d.Show()
 }
@@ -112,6 +119,7 @@ func showEditDialogWithContent(w fyne.Window, entryName, content string, onSave 
 		if field == "content" || field == "extra" {
 			entry.MultiLine = true
 		}
+		// Prefill with current value
 		entry.SetText(values[field])
 		fieldWidgets[field] = entry
 		formItems = append(formItems, widget.NewFormItem(c.String(field), entry))
@@ -165,13 +173,62 @@ func main() {
 		return
 	}
 
+	storeDir := config.PasswordStoreDir()
+	if _, err := os.Stat(storeDir); os.IsNotExist(err) {
+		// Show setup message and Init button
+		info := widget.NewLabel("Password store is not set up yet. Please press Init to start.")
+		initBtn := widget.NewButton("Init", func() {
+			// Show dialog for store creation
+			folderEntry := widget.NewEntry()
+			folderEntry.SetText(".password-store")
+			folderEntry.Disable()
+			remoteEntry := widget.NewEntry()
+			remoteEntry.SetPlaceHolder("git@host:path/to/repo.git")
+			keyIdEntry := widget.NewEntry()
+			keyIdEntry.SetPlaceHolder("GPG Key ID")
+			help := widget.NewLabel("If you don't have a GPG key, create it using 'gpg --full-generate-key', then run 'gpg -K' to find the key id.")
+			form := widget.NewForm(
+				widget.NewFormItem("Folder Name", folderEntry),
+				widget.NewFormItem("Remote Git URL (SSH)", remoteEntry),
+				widget.NewFormItem("Key ID", keyIdEntry),
+			)
+			dialog.ShowCustomConfirm(
+				"Init Password Store", "Confirm", "Cancel",
+				container.NewVBox(form, help),
+				func(ok bool) {
+					if !ok {
+						return
+					}
+					home, _ := os.UserHomeDir()
+					baseDir := filepath.Join(home, ".password-store")
+					remote := remoteEntry.Text
+					keyId := keyIdEntry.Text
+					err := store.InitPasswordStore(baseDir, keyId, remote)
+					if err != nil {
+						dialog.ShowError(fmt.Errorf("Failed to init password store: %w", err), w)
+						return
+					}
+					dialog.ShowInformation("Success", "The pass store is created successfully.", w)
+					w.Close()
+					os.Exit(0)
+				}, w)
+		})
+		vbox := container.NewVBox(
+			info,
+			initBtn,
+		)
+		w.SetContent(container.NewCenter(vbox))
+		w.Resize(fyne.NewSize(600, 300))
+		w.ShowAndRun()
+		return
+	}
+
+	// Main UI logic
 	status := widget.NewLabel("")
-
-	var entries []string
-	entries, _ = listPasswordEntries()
+	entries, _ := listPasswordEntries()
 	selectedIdx := -1
+	var decryptBtn, addBtn, editBtn, deleteBtn, syncBtn *widget.Button
 
-	var decryptBtn *widget.Button
 	entriesList := widget.NewList(
 		func() int {
 			entries, _ = listPasswordEntries()
@@ -193,6 +250,12 @@ func main() {
 		if decryptBtn != nil {
 			decryptBtn.Enable()
 		}
+		if editBtn != nil {
+			editBtn.Enable()
+		}
+		if deleteBtn != nil {
+			deleteBtn.Enable()
+		}
 	}
 
 	refreshBtn := widget.NewButton("Refresh", func() {
@@ -200,18 +263,111 @@ func main() {
 		status.SetText("Entries refreshed")
 	})
 
-	syncBtn := widget.NewButton("Sync", func() {
-		go func() {
-			err := git.SyncWithRemote(config.PasswordStoreDir())
-			if err != nil {
-				dialog.ShowError(fmt.Errorf("git sync failed: %w", err), w)
-			} else {
-				dialog.ShowInformation("Git Sync", "Sync completed successfully", w)
-			}
-		}()
+	syncBtn = widget.NewButton("Sync", func() {
+		// TODO: Add sync logic here or restore from previous code
+		status.SetText("Sync not implemented yet")
 	})
 
-	// Helper to show decrypted output in a selectable/copyable dialog
+	addBtn = widget.NewButton("Add", func() {
+		showAddOrEditDialog(w, "Add Entry", "Add", "Cancel", "", "", nil, func(entryName, templateName string, values map[string]string) {
+			req := service.AddEditRequest{
+				EntryName:    entryName,
+				TemplateName: templateName,
+				Fields:       values,
+			}
+			result := service.AddOrEditEntry(req)
+			if result.Err != nil {
+				dialog.ShowError(result.Err, w)
+				return
+			}
+			entriesList.Refresh()
+			status.SetText("Entry added")
+		})
+	})
+
+	editBtn = widget.NewButton("Edit", func() {
+		if selectedIdx < 0 || selectedIdx >= len(entries) {
+			dialog.ShowError(fmt.Errorf("no entry selected"), w)
+			return
+		}
+		entry := entries[selectedIdx]
+		pass, valid := service.GetCachedPassphrase()
+		if !valid {
+			passDialog := widget.NewPasswordEntry()
+			d := dialog.NewForm("Enter GPG Passphrase", "OK", "Cancel",
+				[]*widget.FormItem{widget.NewFormItem("Passphrase", passDialog)},
+				func(ok bool) {
+					if !ok {
+						return
+					}
+					pass = passDialog.Text
+					result := service.DecryptAndCacheIfOk(entry, pass)
+					if result.Err != nil {
+						dialog.ShowError(result.Err, w)
+						return
+					}
+					showEditDialogWithContent(w, entry, result.Plaintext, func(values map[string]string) {
+						req := service.AddEditRequest{
+							EntryName:    entry,
+							TemplateName: getTemplateFromContent(result.Plaintext),
+							Fields:       values,
+						}
+						editResult := service.AddOrEditEntry(req)
+						if editResult.Err != nil {
+							dialog.ShowError(editResult.Err, w)
+							return
+						}
+						entriesList.Refresh()
+						status.SetText("Entry updated")
+					})
+				}, w)
+			d.Resize(fyne.NewSize(400, 200))
+			d.Show()
+			return
+		}
+		result := service.DecryptAndCacheIfOk(entry, pass)
+		if result.Err != nil {
+			dialog.ShowError(result.Err, w)
+			return
+		}
+		showEditDialogWithContent(w, entry, result.Plaintext, func(values map[string]string) {
+			req := service.AddEditRequest{
+				EntryName:    entry,
+				TemplateName: getTemplateFromContent(result.Plaintext),
+				Fields:       values,
+			}
+			editResult := service.AddOrEditEntry(req)
+			if editResult.Err != nil {
+				dialog.ShowError(editResult.Err, w)
+				return
+			}
+			entriesList.Refresh()
+			status.SetText("Entry updated")
+		})
+	})
+	editBtn.Disable()
+
+	deleteBtn = widget.NewButton("Delete", func() {
+		if selectedIdx < 0 || selectedIdx >= len(entries) {
+			dialog.ShowError(fmt.Errorf("no entry selected"), w)
+			return
+		}
+		entry := entries[selectedIdx]
+		dialog.ShowConfirm("Delete Entry", fmt.Sprintf("Are you sure you want to delete '%s'?", entry), func(ok bool) {
+			if !ok {
+				return
+			}
+			err := service.DeleteEntry(entry)
+			if err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			entriesList.Refresh()
+			status.SetText("Entry deleted")
+		}, w)
+	})
+	deleteBtn.Disable()
+
 	showDecryptedDialog := func(parent fyne.Window, text string) {
 		entry := widget.NewMultiLineEntry()
 		entry.SetText(text)
@@ -239,21 +395,19 @@ func main() {
 						return
 					}
 					pass = passDialog.Text
-					// Try decryption first, only cache if successful
-					result := service.DecryptAndMaybeCacheWithCache(entry, pass, false)
+					// Only cache if successful
+					result := service.DecryptAndCacheIfOk(entry, pass)
 					if result.Err != nil {
 						dialog.ShowError(result.Err, w)
 						return
 					}
-					// Now cache passphrase
-					_ = service.DecryptAndMaybeCacheWithCache(entry, pass, true)
 					showDecryptedDialog(w, result.Plaintext)
 				}, w)
 			d.Resize(fyne.NewSize(400, 200))
 			d.Show()
 			return
 		}
-		result := service.DecryptAndMaybeCacheWithCache(entry, pass, false)
+		result := service.DecryptAndCacheIfOk(entry, pass)
 		if result.Err != nil {
 			dialog.ShowError(result.Err, w)
 			return
@@ -262,143 +416,26 @@ func main() {
 	})
 	decryptBtn.Disable()
 
-	addEntryBtn := widget.NewButton("Add Entry", func() {
-		showAddOrEditDialog(w, "Add New Entry", "Submit", "Cancel", "", "", nil, func(entryName, templateName string, values map[string]string) {
-			req := service.AddEditRequest{
-				EntryName:    entryName,
-				TemplateName: templateName,
-				Fields:       values,
-			}
-			result := service.AddOrEditEntry(req)
-			if result.Err != nil {
-				dialog.ShowError(result.Err, w)
-				return
-			}
-			entriesList.Refresh()
-			status.SetText(service.GetGitStatus())
-		})
-	})
-
-	// Delete Entry Button
-	deleteEntryBtn := widget.NewButton("Delete Entry", func() {
-		if selectedIdx < 0 || selectedIdx >= len(entries) {
-			dialog.ShowError(fmt.Errorf("no entry selected"), w)
-			return
-		}
-		entry := entries[selectedIdx]
-		dialog.ShowConfirm("Delete Entry", fmt.Sprintf("Are you sure you want to delete '%s'?", entry), func(ok bool) {
-			if !ok {
-				return
-			}
-			// Remove file
-			path := filepath.Join(config.PasswordStoreDir(), entry+".gpg")
-			if err := os.Remove(path); err != nil {
-				dialog.ShowError(fmt.Errorf("failed to delete entry: %w", err), w)
-				return
-			}
-			entriesList.Refresh()
-			status.SetText(fmt.Sprintf("Entry '%s' deleted", entry))
-		}, w)
-	})
-
-	// Edit Entry Button
-	editEntryBtn := widget.NewButton("Edit Entry", func() {
-		if selectedIdx < 0 || selectedIdx >= len(entries) {
-			dialog.ShowError(fmt.Errorf("no entry selected"), w)
-			return
-		}
-		entry := entries[selectedIdx]
-		// Decrypt entry to get fields
-		pass, valid := service.GetCachedPassphrase()
-		if !valid {
-			passDialog := widget.NewPasswordEntry()
-			d := dialog.NewForm("Enter GPG Passphrase", "OK", "Cancel",
-				[]*widget.FormItem{widget.NewFormItem("Passphrase", passDialog)},
-				func(ok bool) {
-					if !ok {
-						return
-					}
-					pass = passDialog.Text
-					result := service.DecryptAndMaybeCacheWithCache(entry, pass, false)
-					if result.Err != nil {
-						dialog.ShowError(result.Err, w)
-						return
-					}
-					_ = service.DecryptAndMaybeCacheWithCache(entry, pass, true)
-					showEditDialogWithContent(w, entry, result.Plaintext, func(values map[string]string) {
-						req := service.AddEditRequest{
-							EntryName:    entry,
-							TemplateName: getTemplateFromContent(result.Plaintext),
-							Fields:       values,
-							GPGId:        config.GPGId(),
-						}
-						res := service.AddOrEditEntry(req)
-						if res.Err != nil {
-							dialog.ShowError(res.Err, w)
-							return
-						}
-						entriesList.Refresh()
-						status.SetText("Entry updated. Please sync to remote.")
-						dialog.ShowInformation("Sync Reminder", "Entry updated. Please sync to remote.", w)
-					})
-				}, w)
-			d.Resize(fyne.NewSize(400, 200))
-			d.Show()
-			return
-		}
-		result := service.DecryptAndMaybeCacheWithCache(entry, pass, false)
-		if result.Err != nil {
-			dialog.ShowError(result.Err, w)
-			return
-		}
-		showEditDialogWithContent(w, entry, result.Plaintext, func(values map[string]string) {
-			req := service.AddEditRequest{
-				EntryName:    entry,
-				TemplateName: getTemplateFromContent(result.Plaintext),
-				Fields:       values,
-				GPGId:        config.GPGId(),
-			}
-			res := service.AddOrEditEntry(req)
-			if res.Err != nil {
-				dialog.ShowError(res.Err, w)
-				return
-			}
-			entriesList.Refresh()
-			status.SetText("Entry updated. Please sync to remote.")
-			dialog.ShowInformation("Sync Reminder", "Entry updated. Please sync to remote.", w)
-		})
-	})
-
-	menu := fyne.NewMainMenu(
-		fyne.NewMenu("File",
-			fyne.NewMenuItem("Quit", func() { a.Quit() }),
-		),
-		fyne.NewMenu("Git",
-			fyne.NewMenuItem("Sync", func() {
-				go func() {
-					err := git.SyncWithRemote(config.PasswordStoreDir())
-					if err != nil {
-						dialog.ShowError(fmt.Errorf("git sync failed: %w", err), w)
-					} else {
-						dialog.ShowInformation("Git Sync", "Sync completed successfully", w)
-					}
-				}()
-			}),
-		),
-	)
-	w.SetMainMenu(menu)
-
-	entriesListScroll := container.NewVScroll(entriesList)
-	entriesListScroll.SetMinSize(fyne.NewSize(0, 10*24))
-
+	// Add the buttons to the UI so they are used
+	btnRow := container.NewHBox(refreshBtn, addBtn, editBtn, deleteBtn, decryptBtn, syncBtn)
+	entriesLabel := widget.NewLabel("Password Entries:")
+	entriesScroll := container.NewVScroll(entriesList)
+	entriesScroll.SetMinSize(fyne.NewSize(400, 300))
 	mainContent := container.NewVBox(
-		container.NewHBox(refreshBtn, decryptBtn, syncBtn, addEntryBtn, editEntryBtn, deleteEntryBtn),
-		widget.NewLabel("Password Entries:"),
-		entriesListScroll,
+		btnRow,
+		entriesLabel,
+		entriesScroll,
 	)
-
 	content := container.NewBorder(nil, status, nil, nil, mainContent)
+
+	// Add File menu
+	fileMenu := fyne.NewMenu("File",
+		fyne.NewMenuItem("Quit", func() { w.Close() }),
+	)
+	mainMenu := fyne.NewMainMenu(fileMenu)
+	w.SetMainMenu(mainMenu)
+
 	w.SetContent(content)
-	w.Resize(fyne.NewSize(600, 700))
+	w.Resize(fyne.NewSize(700, 800))
 	w.ShowAndRun()
 }
