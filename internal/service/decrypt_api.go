@@ -1,13 +1,19 @@
 package service
 
 import (
+	"log/slog"
+	"time"
+
 	"github.com/duykhoa/gopass/internal/config"
 	"github.com/duykhoa/gopass/internal/gpg"
 )
 
+const cacheDuration = 30 * time.Minute
+
 // GetCachedPassphrase returns the cached passphrase and whether it is valid.
 func GetCachedPassphrase() (string, bool) {
-	pass, valid, _ := gpg.DecryptCachedPassphrase(getCachePath())
+	pass, valid, err := gpg.DecryptCachedPassphrase(getCachePath())
+	slog.Info("Failed to decrypt cached passphrase", "error", err, "valid", valid)
 	return pass, valid
 }
 
@@ -17,10 +23,9 @@ func DecryptAndCacheIfOk(entry, passphrase string) DecryptResult {
 		StoreDir:   config.PasswordStoreDir(),
 		Entry:      entry,
 		Passphrase: passphrase,
-		Cache:      false,
 		CachePath:  getCachePath(),
 	}
-	result := DecryptAndMaybeCache(req)
+	result := Decrypt(req)
 	if result.Err == nil && passphrase != "" {
 		CachePassphrase(passphrase)
 	}
@@ -29,7 +34,7 @@ func DecryptAndCacheIfOk(entry, passphrase string) DecryptResult {
 
 // CachePassphrase stores the passphrase in the cache file.
 func CachePassphrase(passphrase string) error {
-	return gpg.EncryptAndCachePassphrase(passphrase, getCachePath(), 30*60) // 30 min
+	return gpg.EncryptAndCachePassphrase(passphrase, getCachePath(), cacheDuration)
 }
 
 func getCachePath() string {

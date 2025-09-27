@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -81,6 +82,9 @@ func DecryptCachedPassphrase(cachePath string) (string, bool, error) {
 	if err := json.Unmarshal(plaintext, &cache); err != nil {
 		return "", false, err
 	}
+
+	slog.Info("Decrypted cached passphrase", "expires_at", cache.ExpiresAt, "time now", time.Now())
+	
 	if time.Now().After(cache.ExpiresAt) {
 		return "", false, nil
 	}

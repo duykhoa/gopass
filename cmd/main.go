@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -40,6 +41,7 @@ func listPasswordEntries() ([]string, error) {
 
 // Helper: show add/edit dialog with dynamic fields
 func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, templateName string, initialValues map[string]string, onSave func(entryName, templateName string, values map[string]string)) {
+
 	templateNames := []string{service.TemplateFreeForm, service.TemplateEmailAndPassword}
 	templateSelect := widget.NewSelect(templateNames, nil)
 	if templateName != "" {
@@ -55,16 +57,29 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 	entryNameEntry.SetPlaceHolder("Entry name (e.g. github)")
 	fieldWidgets := map[string]*widget.Entry{}
 	c := cases.Title(language.English)
-	form := widget.NewForm(
-		widget.NewFormItem("Entry Name", entryNameEntry),
-		widget.NewFormItem("Template", templateSelect),
-	)
-	var updateFields func(string)
-	updateFields = func(templateName string) {
-		// Keep the first two items (Entry Name, Template), replace the rest
-		items := form.Items[:2]
+	var formItems []*widget.FormItem
+	formItems = append(formItems, widget.NewFormItem("Entry Name", entryNameEntry))
+	formItems = append(formItems, widget.NewFormItem("Template", templateSelect))
+	tmpl := service.GetTemplateByName(templateSelect.Selected)
+	if tmpl != nil {
+		for _, field := range tmpl.Fields {
+			entry := widget.NewEntry()
+			if field == "content" || field == "extra" {
+				entry.MultiLine = true
+			}
+			if initialValues != nil {
+				entry.SetText(initialValues[field])
+			}
+			fieldWidgets[field] = entry
+			formItems = append(formItems, widget.NewFormItem(c.String(field), entry))
+		}
+	}
+	form := widget.NewForm(formItems...)
+	templateSelect.OnChanged = func(name string) {
+		// Rebuild form items on template change
+		newFormItems := formItems[:2]
 		fieldWidgets = map[string]*widget.Entry{}
-		tmpl := service.GetTemplateByName(templateName)
+		tmpl := service.GetTemplateByName(name)
 		if tmpl != nil {
 			for _, field := range tmpl.Fields {
 				entry := widget.NewEntry()
@@ -75,33 +90,24 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 					entry.SetText(initialValues[field])
 				}
 				fieldWidgets[field] = entry
-				items = append(items, widget.NewFormItem(c.String(field), entry))
+				newFormItems = append(newFormItems, widget.NewFormItem(c.String(field), entry))
 			}
 		}
-		form.Items = items
+		form.Items = newFormItems
 		form.Refresh()
 	}
-	updateFields(templateSelect.Selected)
-	templateSelect.OnChanged = func(name string) {
-		updateFields(name)
-	}
-	var d *dialog.CustomDialog
-	submitBtn := widget.NewButton(okLabel, func() {
+	d := dialog.NewForm(title, okLabel, cancelLabel, formItems, func(ok bool) {
+		if !ok {
+			return
+		}
 		entryName := entryNameEntry.Text
 		templateName := templateSelect.Selected
 		values := map[string]string{}
 		for k, entry := range fieldWidgets {
 			values[k] = entry.Text
 		}
-		d.Hide()
 		onSave(entryName, templateName, values)
-	})
-	cancelBtn := widget.NewButton(cancelLabel, func() {
-		d.Hide()
-	})
-	btnRow := container.NewHBox(submitBtn, cancelBtn)
-	content := container.NewVBox(form, btnRow)
-	d = dialog.NewCustom(title, "", content, w)
+	}, w)
 	d.Resize(fyne.NewSize(500, 400))
 	d.Show()
 }
@@ -209,8 +215,17 @@ func main() {
 						return
 					}
 					dialog.ShowInformation("Success", "The pass store is created successfully.", w)
-					w.Close()
-					os.Exit(0)
+					// Instead of exiting, show the main UI
+					w.SetContent(widget.NewLabel("Store created! Loading UI..."))
+					// Re-run main UI logic
+					// This is a hack: just restart the app window
+					go func() {
+						// Give time for dialog to show
+						<-time.After(1 * time.Second)
+						w.Close()
+						os.Args[0] = os.Args[0] // no-op to avoid go vet warning
+						main()
+					}()
 				}, w)
 		})
 		vbox := container.NewVBox(
@@ -386,6 +401,7 @@ func main() {
 		}
 		entry := entries[selectedIdx]
 		pass, valid := service.GetCachedPassphrase()
+
 		if !valid {
 			passDialog := widget.NewPasswordEntry()
 			d := dialog.NewForm("Enter GPG Passphrase", "OK", "Cancel",
