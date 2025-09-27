@@ -4,6 +4,8 @@ APP_NAME=gopass-ui
 GO_FILES=$(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GO_VERSION ?= 1.25
 GOOS ?= linux
+CGO_ENABLED ?= 0
+
 default: run
 
 .PHONY: run
