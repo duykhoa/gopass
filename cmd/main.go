@@ -41,45 +41,23 @@ func listPasswordEntries() ([]string, error) {
 
 // Helper: show add/edit dialog with dynamic fields
 func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, templateName string, initialValues map[string]string, onSave func(entryName, templateName string, values map[string]string)) {
-
-	templateNames := []string{service.TemplateFreeForm, service.TemplateEmailAndPassword}
-	templateSelect := widget.NewSelect(templateNames, nil)
-	if templateName != "" {
-		templateSelect.SetSelected(templateName)
-	} else {
-		templateSelect.SetSelected(templateNames[0])
-	}
-	entryNameEntry := widget.NewEntry()
-	if entryName != "" {
-		entryNameEntry.SetText(entryName)
-		entryNameEntry.Disable()
-	}
-	entryNameEntry.SetPlaceHolder("Entry name (e.g. github)")
-	fieldWidgets := map[string]*widget.Entry{}
-	c := cases.Title(language.English)
-	var formItems []*widget.FormItem
-	formItems = append(formItems, widget.NewFormItem("Entry Name", entryNameEntry))
-	formItems = append(formItems, widget.NewFormItem("Template", templateSelect))
-	tmpl := service.GetTemplateByName(templateSelect.Selected)
-	if tmpl != nil {
-		for _, field := range tmpl.Fields {
-			entry := widget.NewEntry()
-			if field == "content" || field == "extra" {
-				entry.MultiLine = true
-			}
-			if initialValues != nil {
-				entry.SetText(initialValues[field])
-			}
-			fieldWidgets[field] = entry
-			formItems = append(formItems, widget.NewFormItem(c.String(field), entry))
+	var showDialog func(selectedTemplate string)
+	showDialog = func(selectedTemplate string) {
+		templateNames := []string{service.TemplateFreeForm, service.TemplateEmailAndPassword}
+		templateSelect := widget.NewSelect(templateNames, nil)
+		templateSelect.SetSelected(selectedTemplate)
+		entryNameEntry := widget.NewEntry()
+		if entryName != "" {
+			entryNameEntry.SetText(entryName)
+			entryNameEntry.Disable()
 		}
-	}
-	form := widget.NewForm(formItems...)
-	templateSelect.OnChanged = func(name string) {
-		// Rebuild form items on template change
-		newFormItems := formItems[:2]
-		fieldWidgets = map[string]*widget.Entry{}
-		tmpl := service.GetTemplateByName(name)
+		entryNameEntry.SetPlaceHolder("Entry name (e.g. github)")
+		fieldWidgets := map[string]*widget.Entry{}
+		c := cases.Title(language.English)
+		var formItems []*widget.FormItem
+		formItems = append(formItems, widget.NewFormItem("Entry Name", entryNameEntry))
+		formItems = append(formItems, widget.NewFormItem("Template", templateSelect))
+		tmpl := service.GetTemplateByName(selectedTemplate)
 		if tmpl != nil {
 			for _, field := range tmpl.Fields {
 				entry := widget.NewEntry()
@@ -90,26 +68,34 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 					entry.SetText(initialValues[field])
 				}
 				fieldWidgets[field] = entry
-				newFormItems = append(newFormItems, widget.NewFormItem(c.String(field), entry))
+				formItems = append(formItems, widget.NewFormItem(c.String(field), entry))
 			}
 		}
-		form.Items = newFormItems
-		form.Refresh()
+		d := dialog.NewForm(title, okLabel, cancelLabel, formItems, func(ok bool) {
+			if !ok {
+				return
+			}
+			entryName := entryNameEntry.Text
+			templateName := templateSelect.Selected
+			values := map[string]string{}
+			for k, entry := range fieldWidgets {
+				values[k] = entry.Text
+			}
+			onSave(entryName, templateName, values)
+		}, w)
+		d.Resize(fyne.NewSize(500, 400))
+		d.Show()
+		templateSelect.OnChanged = func(name string) {
+			d.Hide()
+			showDialog(name)
+		}
 	}
-	d := dialog.NewForm(title, okLabel, cancelLabel, formItems, func(ok bool) {
-		if !ok {
-			return
-		}
-		entryName := entryNameEntry.Text
-		templateName := templateSelect.Selected
-		values := map[string]string{}
-		for k, entry := range fieldWidgets {
-			values[k] = entry.Text
-		}
-		onSave(entryName, templateName, values)
-	}, w)
-	d.Resize(fyne.NewSize(500, 400))
-	d.Show()
+	// Start with initial template
+	if templateName != "" {
+		showDialog(templateName)
+	} else {
+		showDialog(service.TemplateFreeForm)
+	}
 }
 
 // Helper: show edit dialog with fields from decrypted content

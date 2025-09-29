@@ -2,7 +2,7 @@ package service
 
 const (
 	TemplateFreeForm         = "Free Form"
-	TemplateEmailAndPassword = "email and password"
+	TemplateEmailAndPassword = "Email and password"
 )
 
 type Template struct {
