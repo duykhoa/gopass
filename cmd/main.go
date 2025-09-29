@@ -110,13 +110,19 @@ func showEditDialogWithContent(w fyne.Window, entryName, content string, onSave 
 	fieldWidgets := map[string]*widget.Entry{}
 	var formItems []*widget.FormItem
 	c := cases.Title(language.English)
+	fieldMinWidth := float32(400)
 	for _, field := range tmpl.Fields {
-		entry := widget.NewEntry()
+		var entry *widget.Entry
 		if field == "content" || field == "extra" {
-			entry.MultiLine = true
+			entry = widget.NewMultiLineEntry()
+			entry.SetText(values[field])
+			entry.Wrapping = fyne.TextWrapWord
+			entry.Resize(fyne.NewSize(fieldMinWidth, 60))
+		} else {
+			entry = widget.NewEntry()
+			entry.SetText(values[field])
+			entry.Resize(fyne.NewSize(fieldMinWidth, 30))
 		}
-		// Prefill with current value
-		entry.SetText(values[field])
 		fieldWidgets[field] = entry
 		formItems = append(formItems, widget.NewFormItem(c.String(field), entry))
 	}
