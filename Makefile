@@ -4,6 +4,7 @@ APP_NAME=gopass-ui
 GO_FILES=$(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GO_VERSION ?= 1.25
 GOOS ?= linux
+GOARCH ?= amd64
 CGO_ENABLED ?= 0
 
 default: run
@@ -18,7 +19,7 @@ test:
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$(GOOS)-amd64 cmd/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-s -w" -o bin/$(APP_NAME)-$(GOOS)-$(GOARCH) cmd/main.go
 
 .PHONY: build-all
 build-all:

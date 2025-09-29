@@ -61,6 +61,7 @@ jobs:
         run: |
           export GOOS=darwin
           export GOARCH=arm64
+
           make build
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
