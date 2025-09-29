@@ -17,7 +17,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/duykhoa/gopass/internal/config"
 
-	// "github.com/duykhoa/gopass/internal/git"
+	"github.com/duykhoa/gopass/internal/git"
 	"github.com/duykhoa/gopass/internal/gpg"
 	"github.com/duykhoa/gopass/internal/service"
 	"github.com/duykhoa/gopass/internal/store"
@@ -279,7 +279,7 @@ func main() {
 	})
 
 	syncBtn = widget.NewButton("Sync", func() {
-		err := gpg.SyncWithRemote(config.PasswordStoreDir())
+		err := git.SyncWithRemote(config.PasswordStoreDir())
 		if err != nil {
 			dialog.ShowError(err, w)
 			return
@@ -454,7 +454,7 @@ func main() {
 	)
 	gitMenu := fyne.NewMenu("Git",
 		fyne.NewMenuItem("Sync", func() {	
-			err := gpg.SyncWithRemote(config.PasswordStoreDir())
+			err := git.SyncWithRemote(config.PasswordStoreDir())
 			if err != nil {
 				dialog.ShowError(err, w)
 				return
