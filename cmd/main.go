@@ -407,33 +407,30 @@ func main() {
 				value = text
 			}
 			label := widget.NewLabel(fmt.Sprintf("%s:", c.String(field)))
-			var valueWidget fyne.CanvasObject
 			if field == "content" || field == "extra" {
 				entry := widget.NewMultiLineEntry()
 				entry.SetText(value)
 				entry.Wrapping = fyne.TextWrapWord
-				entry.Resize(fyne.NewSize(400, 60))
-				valueWidget = entry
+				entryWrap := container.NewGridWrap(fyne.NewSize(400, 60), entry)
 				copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
 					clipboard.SetContent(entry.Text)
 				})
-				row := container.NewHBox(valueWidget, copyBtn)
+				row := container.NewHBox(entryWrap, copyBtn)
 				items = append(items, label, row)
 			} else {
 				entry := widget.NewEntry()
 				entry.SetText(value)
-				entry.Resize(fyne.NewSize(400, 30))
-				valueWidget = entry
+				entryWrap := container.NewGridWrap(fyne.NewSize(400, 40), entry)
 				copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
 					clipboard.SetContent(entry.Text)
 				})
-				row := container.NewHBox(valueWidget, copyBtn)
+				row := container.NewHBox(entryWrap, copyBtn)
 				items = append(items, label, row)
 			}
 		}
 		content := container.NewVBox(items...)
 		d := dialog.NewCustom("Decrypted", "OK", content, parent)
-		d.Resize(fyne.NewSize(600, 400))
+		d.Resize(fyne.NewSize(500, 400))
 		d.Show()
 	}
 
