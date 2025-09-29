@@ -17,11 +17,15 @@ GoPass UI is a modern, cross-platform password manager inspired by the Unix `pas
 - Cross-platform desktop UI (Linux, macOS, Windows).
 - Add, edit, delete, and view secrets with a simple interface.
 - Git sync and remote backup.
+- Template form support.
 - Future: API for cloud and app integration.
 
 ## How to Run
 
-Unfortunately I can't get the prebuild version for MacOS and Windows, please build from the source instead.
+### Unfortunately I can't get the prebuild version for Windows, please build from the source instead.
+
+For MacOS (haven't tested) and Linux, you can download the gopass artifact from the [Actions tab](https://github.com/duykhoa/gopass/actions/runs/18106308357). Checkout the latest jobs in the main branch.
+
 
 ### Prerequisites
 - Go 1.25+
@@ -51,6 +55,8 @@ Binaries will be in the `bin/` directory.
 ## Screenshots
 
 ![screenshot1](/assets/screenshot1.png)
+
+![screenshot2](/assets/screenshot2.png)
 
 ## Roadmap
 - REST API for secret management
