@@ -49,7 +49,8 @@ $ GOOS=darwin GOARCH=arm64 make build
 Binaries will be in the `bin/` directory.
 
 ## Screenshots
-_Add screenshots here_
+
+![screenshot1](/assets/screenshot1.png)
 
 ## Roadmap
 - REST API for secret management
