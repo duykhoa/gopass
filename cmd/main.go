@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/duykhoa/gopass/internal/config"
 
@@ -110,18 +111,23 @@ func showEditDialogWithContent(w fyne.Window, entryName, content string, onSave 
 	fieldWidgets := map[string]*widget.Entry{}
 	var formItems []*widget.FormItem
 	c := cases.Title(language.English)
-	fieldMinWidth := float32(400)
+	// Minimum width is now hardcoded as 400 in entry.Resize
 	for _, field := range tmpl.Fields {
 		var entry *widget.Entry
+		value := values[field]
+		// For Free Form or missing metadata, use raw content if value is empty
+		if (tmpl.Name == service.TemplateFreeForm || tmpl.Name == "") && field == "content" && value == "" && content != "" {
+			value = content
+		}
 		if field == "content" || field == "extra" {
 			entry = widget.NewMultiLineEntry()
-			entry.SetText(values[field])
+			entry.SetText(value)
 			entry.Wrapping = fyne.TextWrapWord
-			entry.Resize(fyne.NewSize(fieldMinWidth, 60))
+			entry.Resize(fyne.NewSize(400, 60))
 		} else {
 			entry = widget.NewEntry()
-			entry.SetText(values[field])
-			entry.Resize(fyne.NewSize(fieldMinWidth, 30))
+			entry.SetText(value)
+			entry.Resize(fyne.NewSize(400, 30))
 		}
 		fieldWidgets[field] = entry
 		formItems = append(formItems, widget.NewFormItem(c.String(field), entry))
@@ -384,11 +390,48 @@ func main() {
 	deleteBtn.Disable()
 
 	showDecryptedDialog := func(parent fyne.Window, text string) {
-		entry := widget.NewMultiLineEntry()
-		entry.SetText(text)
-		entry.Wrapping = fyne.TextWrapWord
-		// Do not disable, so user can select/copy
-		content := container.NewVBox(entry)
+		templateName := getTemplateFromContent(text)
+		tmpl := service.GetTemplateByName(templateName)
+		if tmpl == nil {
+			tmpl = service.GetTemplateByName(service.TemplateFreeForm)
+		}
+		values := parseFieldsFromContent(text, tmpl)
+		var items []fyne.CanvasObject
+		c := cases.Title(language.English)
+		clipboard := parent.Clipboard()
+		// Minimum width is now hardcoded as 400 in entry.Resize
+		for _, field := range tmpl.Fields {
+			value := values[field]
+			// For Free Form or missing metadata, use raw text if value is empty
+			if (tmpl.Name == service.TemplateFreeForm || tmpl.Name == "") && field == "content" && value == "" && text != "" {
+				value = text
+			}
+			label := widget.NewLabel(fmt.Sprintf("%s:", c.String(field)))
+			var valueWidget fyne.CanvasObject
+			if field == "content" || field == "extra" {
+				entry := widget.NewMultiLineEntry()
+				entry.SetText(value)
+				entry.Wrapping = fyne.TextWrapWord
+				entry.Resize(fyne.NewSize(400, 60))
+				valueWidget = entry
+				copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+					clipboard.SetContent(entry.Text)
+				})
+				row := container.NewHBox(valueWidget, copyBtn)
+				items = append(items, label, row)
+			} else {
+				entry := widget.NewEntry()
+				entry.SetText(value)
+				entry.Resize(fyne.NewSize(400, 30))
+				valueWidget = entry
+				copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+					clipboard.SetContent(entry.Text)
+				})
+				row := container.NewHBox(valueWidget, copyBtn)
+				items = append(items, label, row)
+			}
+		}
+		content := container.NewVBox(items...)
 		d := dialog.NewCustom("Decrypted", "OK", content, parent)
 		d.Resize(fyne.NewSize(600, 400))
 		d.Show()
