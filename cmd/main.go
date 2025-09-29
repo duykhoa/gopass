@@ -279,8 +279,12 @@ func main() {
 	})
 
 	syncBtn = widget.NewButton("Sync", func() {
-		// TODO: Add sync logic here or restore from previous code
-		status.SetText("Sync not implemented yet")
+		err := gpg.SyncWithRemote(config.PasswordStoreDir())
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		status.SetText("Sync completed")
 	})
 
 	addBtn = widget.NewButton("Add", func() {
@@ -448,7 +452,17 @@ func main() {
 	fileMenu := fyne.NewMenu("File",
 		fyne.NewMenuItem("Quit", func() { w.Close() }),
 	)
-	mainMenu := fyne.NewMainMenu(fileMenu)
+	gitMenu := fyne.NewMenu("Git",
+		fyne.NewMenuItem("Sync", func() {	
+			err := gpg.SyncWithRemote(config.PasswordStoreDir())
+			if err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			status.SetText("Sync completed")	
+		}),
+	)
+	mainMenu := fyne.NewMainMenu(fileMenu, gitMenu)
 	w.SetMainMenu(mainMenu)
 
 	w.SetContent(content)
