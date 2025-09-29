@@ -23,8 +23,7 @@ import (
 	"github.com/duykhoa/gopass/internal/store"
 )
 
-func listPasswordEntries() ([]string, error) {
-	dir := config.PasswordStoreDir()
+func listPasswordEntries(dir string) ([]string, error) {
 	var entries []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -41,15 +40,17 @@ func listPasswordEntries() ([]string, error) {
 
 // Helper: show add/edit dialog with dynamic fields
 func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, templateName string, initialValues map[string]string, onSave func(entryName, templateName string, values map[string]string)) {
-	var showDialog func(selectedTemplate string)
-	showDialog = func(selectedTemplate string) {
+	var showDialog func(selectedTemplate string, entryNameValue string)
+	showDialog = func(selectedTemplate string, entryNameValue string) {
 		templateNames := []string{service.TemplateFreeForm, service.TemplateEmailAndPassword}
 		templateSelect := widget.NewSelect(templateNames, nil)
 		templateSelect.SetSelected(selectedTemplate)
 		entryNameEntry := widget.NewEntry()
-		if entryName != "" {
+		if entryName != "" && entryNameValue == "" {
 			entryNameEntry.SetText(entryName)
 			entryNameEntry.Disable()
+		} else if entryNameValue != "" {
+			entryNameEntry.SetText(entryNameValue)
 		}
 		entryNameEntry.SetPlaceHolder("Entry name (e.g. github)")
 		fieldWidgets := map[string]*widget.Entry{}
@@ -75,26 +76,26 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 			if !ok {
 				return
 			}
-			entryName := entryNameEntry.Text
+			entryNameVal := entryNameEntry.Text
 			templateName := templateSelect.Selected
 			values := map[string]string{}
 			for k, entry := range fieldWidgets {
 				values[k] = entry.Text
 			}
-			onSave(entryName, templateName, values)
+			onSave(entryNameVal, templateName, values)
 		}, w)
 		d.Resize(fyne.NewSize(500, 400))
 		d.Show()
 		templateSelect.OnChanged = func(name string) {
 			d.Hide()
-			showDialog(name)
+			showDialog(name, entryNameEntry.Text)
 		}
 	}
 	// Start with initial template
 	if templateName != "" {
-		showDialog(templateName)
+		showDialog(templateName, "")
 	} else {
-		showDialog(service.TemplateFreeForm)
+		showDialog(service.TemplateFreeForm, "")
 	}
 }
 
@@ -102,6 +103,9 @@ func showAddOrEditDialog(w fyne.Window, title, okLabel, cancelLabel, entryName, 
 func showEditDialogWithContent(w fyne.Window, entryName, content string, onSave func(values map[string]string)) {
 	templateName := getTemplateFromContent(content)
 	tmpl := service.GetTemplateByName(templateName)
+	if tmpl == nil {
+		tmpl = service.GetTemplateByName(service.TemplateFreeForm)
+	}
 	values := parseFieldsFromContent(content, tmpl)
 	fieldWidgets := map[string]*widget.Entry{}
 	var formItems []*widget.FormItem
@@ -226,20 +230,20 @@ func main() {
 
 	// Main UI logic
 	status := widget.NewLabel("")
-	entries, _ := listPasswordEntries()
+	entries, _ := listPasswordEntries(config.PasswordStoreDir())
 	selectedIdx := -1
 	var decryptBtn, addBtn, editBtn, deleteBtn, syncBtn *widget.Button
 
 	entriesList := widget.NewList(
 		func() int {
-			entries, _ = listPasswordEntries()
+			entries, _ = listPasswordEntries(config.PasswordStoreDir())
 			return len(entries)
 		},
 		func() fyne.CanvasObject {
 			return widget.NewLabel("")
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			entries, _ = listPasswordEntries()
+			entries, _ = listPasswordEntries(config.PasswordStoreDir())
 			if i < len(entries) {
 				o.(*widget.Label).SetText(entries[i])
 			}
@@ -376,8 +380,8 @@ func main() {
 	showDecryptedDialog := func(parent fyne.Window, text string) {
 		entry := widget.NewMultiLineEntry()
 		entry.SetText(text)
-		entry.Disable()
 		entry.Wrapping = fyne.TextWrapWord
+		// Do not disable, so user can select/copy
 		content := container.NewVBox(entry)
 		d := dialog.NewCustom("Decrypted", "OK", content, parent)
 		d.Resize(fyne.NewSize(600, 400))
@@ -439,13 +443,13 @@ func main() {
 		fyne.NewMenuItem("Quit", func() { w.Close() }),
 	)
 	gitMenu := fyne.NewMenu("Git",
-		fyne.NewMenuItem("Sync", func() {	
+		fyne.NewMenuItem("Sync", func() {
 			err := git.SyncWithRemote(config.PasswordStoreDir())
 			if err != nil {
 				dialog.ShowError(err, w)
 				return
 			}
-			status.SetText("Sync completed")	
+			status.SetText("Sync completed")
 		}),
 	)
 	mainMenu := fyne.NewMainMenu(fileMenu, gitMenu)
