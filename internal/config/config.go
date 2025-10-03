@@ -8,15 +8,21 @@ import (
 )
 
 var (
-	passwordStoreDir string
-	gpgId            string
-	passphraseKey    []byte
-	initOnce         sync.Once
+	passwordStoreDir     string
+	passwordStoreDirName string
+	gpgId                string
+	passphraseKey        []byte
+	initOnce             sync.Once
 )
 
 func PasswordStoreDir() string {
 	initOnce.Do(loadConfig)
 	return passwordStoreDir
+}
+
+func PasswordStoreDirName() string {
+	initOnce.Do(loadConfig)
+	return passwordStoreDirName
 }
 
 func GPGId() string {
@@ -31,7 +37,8 @@ func PassphraseKey() []byte {
 
 func loadConfig() {
 	home, _ := os.UserHomeDir()
-	passwordStoreDir = filepath.Join(home, ".password-store")
+	passwordStoreDirName = ".password-store-test"
+	passwordStoreDir = filepath.Join(home, passwordStoreDirName)
 	gpgIdPath := filepath.Join(passwordStoreDir, ".gpg-id")
 	gpgIdBytes, err := os.ReadFile(gpgIdPath)
 	if err == nil {

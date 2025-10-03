@@ -11,6 +11,19 @@ import (
 
 // InitPasswordStore creates a new password store compatible with pass
 func InitPasswordStore(baseDir, keyID, remoteURL string) error {
+	if baseDir == "" {
+		return fmt.Errorf("baseDir cannot be empty")
+	}
+
+	if keyID == "" {
+		return fmt.Errorf("keyID cannot be empty")
+	}
+
+	if remoteURL == "" {
+		// Right now we don't allow empty remoteURL, but we might in the future
+		return fmt.Errorf("remoteURL cannot be empty")
+	}
+
 	if _, err := os.Stat(baseDir); err == nil {
 		return fmt.Errorf("password store already exists at %s", baseDir)
 	}

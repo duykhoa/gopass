@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"time"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -171,74 +171,93 @@ func parseFieldsFromContent(content string, tmpl *service.Template) map[string]s
 	return values
 }
 
+// Helper: show error dialog
+func showErrorDialog(w fyne.Window, err error) {
+	d := dialog.NewError(err, w)
+	d.Resize(fyne.NewSize(400, 200))
+	d.Show()
+}
+
+func checkPasswordStoreAndInitIfNotExist(w fyne.Window) {
+	_, err := os.Stat(config.PasswordStoreDir())
+
+	if err == nil {
+		return
+	}
+
+	// If error is something else than not exist, show error and exit
+	if !os.IsNotExist(err) {
+		showErrorDialog(w, fmt.Errorf("failed to access password store directory: %w", err))
+		return
+	}
+
+	// Show setup message and Init button
+	info := widget.NewLabel("Password store is not set up yet. Please press Init to start.")
+	info.Wrapping = fyne.TextWrapWord
+	initBtn := widget.NewButton("Init", func() {
+		// Show dialog for store creation
+		folderEntry := widget.NewEntry()
+		folderEntry.SetText(config.PasswordStoreDirName())
+		folderEntry.Disable()
+		remoteEntry := widget.NewEntry()
+		remoteEntry.SetPlaceHolder("git@host:path/to/repo.git")
+		keyIdEntry := widget.NewEntry()
+		keyIdEntry.SetPlaceHolder("GPG Key ID")
+		help := widget.NewLabel("If you don't have a GPG key, create it using 'gpg --full-generate-key', then run 'gpg -K' to find the key id.")
+		//help.Wrapping = fyne.TextWrapWord
+		//help.Resize(fyne.NewSize(400, 100))
+		form := widget.NewForm(
+			widget.NewFormItem("Folder Name", folderEntry),
+			widget.NewFormItem("Remote Git URL (SSH)", remoteEntry),
+			widget.NewFormItem("Key ID", keyIdEntry),
+		)
+		dialog.ShowCustomConfirm(
+			"Init Password Store", "Confirm", "Cancel",
+			container.NewVBox(form, help),
+			func(ok bool) {
+				if !ok {
+					return
+				}
+				home, _ := os.UserHomeDir()
+				baseDir := filepath.Join(home, folderEntry.Text)
+				remote := remoteEntry.Text
+				keyId := keyIdEntry.Text
+
+				if matched, err := regexp.MatchString(`^git@[\w\.-]+:[\w\./-]+\.git$`, remote); !matched || err != nil {
+					showErrorDialog(w, fmt.Errorf("remote url doesn't follow expected format"))
+					return
+				}
+				err := store.InitPasswordStore(baseDir, keyId, remote)
+				if err != nil {
+					showErrorDialog(w, fmt.Errorf("failed to init password store: %w", err))
+					return
+				}
+				dialog.ShowInformation("Success", "The pass store is created successfully.", w)
+			}, w)
+	})
+
+	infoWrap := container.NewGridWrap(fyne.NewSize(400, 60), info)
+
+	vbox := container.NewVBox(
+		infoWrap,
+		initBtn,
+	)
+	vbox.Resize(fyne.NewSize(500, 200))
+	w.SetContent(container.NewCenter(vbox))
+	w.Resize(fyne.NewSize(700, 400))
+	w.ShowAndRun()
+}
+
 func main() {
 	a := app.New()
 	w := a.NewWindow("GoPass UI MVP")
 
 	if !gpg.CheckGPGAvailable() {
-		dialog.ShowError(fmt.Errorf("gpg command not found. Please install GnuPG (gpg) and restart the app"), w)
-		w.ShowAndRun()
+		showErrorDialog(w, fmt.Errorf("gpg command not found. Please install GnuPG (gpg) and restart the app"))
 		return
 	}
 
-	storeDir := config.PasswordStoreDir()
-	if _, err := os.Stat(storeDir); os.IsNotExist(err) {
-		// Show setup message and Init button
-		info := widget.NewLabel("Password store is not set up yet. Please press Init to start.")
-		initBtn := widget.NewButton("Init", func() {
-			// Show dialog for store creation
-			folderEntry := widget.NewEntry()
-			folderEntry.SetText(".password-store")
-			folderEntry.Disable()
-			remoteEntry := widget.NewEntry()
-			remoteEntry.SetPlaceHolder("git@host:path/to/repo.git")
-			keyIdEntry := widget.NewEntry()
-			keyIdEntry.SetPlaceHolder("GPG Key ID")
-			help := widget.NewLabel("If you don't have a GPG key, create it using 'gpg --full-generate-key', then run 'gpg -K' to find the key id.")
-			form := widget.NewForm(
-				widget.NewFormItem("Folder Name", folderEntry),
-				widget.NewFormItem("Remote Git URL (SSH)", remoteEntry),
-				widget.NewFormItem("Key ID", keyIdEntry),
-			)
-			dialog.ShowCustomConfirm(
-				"Init Password Store", "Confirm", "Cancel",
-				container.NewVBox(form, help),
-				func(ok bool) {
-					if !ok {
-						return
-					}
-					home, _ := os.UserHomeDir()
-					baseDir := filepath.Join(home, ".password-store")
-					remote := remoteEntry.Text
-					keyId := keyIdEntry.Text
-					err := store.InitPasswordStore(baseDir, keyId, remote)
-					if err != nil {
-						dialog.ShowError(fmt.Errorf("Failed to init password store: %w", err), w)
-						return
-					}
-					dialog.ShowInformation("Success", "The pass store is created successfully.", w)
-					// Instead of exiting, show the main UI
-					w.SetContent(widget.NewLabel("Store created! Loading UI..."))
-					// Re-run main UI logic
-					// This is a hack: just restart the app window
-					go func() {
-						// Give time for dialog to show
-						<-time.After(1 * time.Second)
-						w.Close()
-						os.Args[0] = os.Args[0] // no-op to avoid go vet warning
-						main()
-					}()
-				}, w)
-		})
-		vbox := container.NewVBox(
-			info,
-			initBtn,
-		)
-		w.SetContent(container.NewCenter(vbox))
-		w.Resize(fyne.NewSize(600, 300))
-		w.ShowAndRun()
-		return
-	}
+	checkPasswordStoreAndInitIfNotExist(a.NewWindow("GoPass Init Store"))
 
 	// Main UI logic
 	status := widget.NewLabel("")
