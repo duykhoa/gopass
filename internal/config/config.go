@@ -37,13 +37,16 @@ func PassphraseKey() []byte {
 
 func loadConfig() {
 	home, _ := os.UserHomeDir()
-	passwordStoreDirName = ".password-store-test"
+	passwordStoreDirName = ".password-store"
 	passwordStoreDir = filepath.Join(home, passwordStoreDirName)
 	gpgIdPath := filepath.Join(passwordStoreDir, ".gpg-id")
 	gpgIdBytes, err := os.ReadFile(gpgIdPath)
 	if err == nil {
 		gpgId = strings.TrimSpace(string(gpgIdBytes))
 	}
-	// For demo, use a static key. In production, use a secure method.
+
+	// This is a hardcoded passphrase encryption key, it is 
+	// probably a good idea to generate a random passphrase 
+	// in the first time running the app
 	passphraseKey = []byte("gopass-demo-static-key-32bytes!!")
 }

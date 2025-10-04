@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/go-git/go-git/v5"
@@ -24,14 +25,19 @@ func SyncWithRemote(storeDir string) error {
 	// Add all changes
 	_ = w.AddWithOptions(&git.AddOptions{All: true})
 	// Commit (if any changes)
-	_, err = w.Commit("gopass sync", &git.CommitOptions{AllowEmptyCommits: true})
+	_, err = w.Commit("gopass sync", &git.CommitOptions{AllowEmptyCommits: false})
 	if err != nil {
+		if errors.Is(err, git.ErrEmptyCommit) {
+			return nil
+		}
+		
 		return fmt.Errorf("git commit failed: %w", err)
 	}
 	// Push to remote
 	err = repo.Push(&git.PushOptions{RemoteName: "origin"})
-	if err != nil {
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate){
 		return fmt.Errorf("git push failed: %w", err)
 	}
+
 	return nil
 }
