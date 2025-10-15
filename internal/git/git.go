@@ -8,6 +8,7 @@ import (
 )
 
 // SyncWithRemote pulls and pushes the password store directory with its remote.
+// it uses ssh-keys from ssh-agent to authenticate.
 func SyncWithRemote(storeDir string) error {
 	repo, err := git.PlainOpen(storeDir)
 	if err != nil {
