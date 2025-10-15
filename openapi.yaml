@@ -1,0 +1,93 @@
+openapi: 3.0.0
+info:
+  title: Gopass API
+  description: API for interacting with gopass secrets
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local server
+paths:
+  /secrets:
+    get:
+      summary: List all secrets
+      description: Returns a list of all secret names
+      responses:
+        '200':
+          description: A list of secrets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /secrets/{secret_name}:
+    get:
+      summary: View a secret
+      description: Returns the decrypted value of a secret
+      parameters:
+        - name: secret_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The decrypted secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: string
+    put:
+      summary: Update a secret
+      description: Updates the value of a secret
+      parameters:
+        - name: secret_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+      responses:
+        '200':
+          description: Secret updated successfully
+    delete:
+      summary: Delete a secret
+      description: Deletes a secret
+      parameters:
+        - name: secret_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Secret deleted successfully
+  /init:
+    post:
+      summary: Initialize the password store
+      description: Initializes the password store with a git repository and GPG key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                git_repo_url:
+                  type: string
+                gpg_key:
+                  type: string
+      responses:
+        '200':
+          description: Password store initialized successfully
