@@ -11,7 +11,11 @@ default: run
 
 .PHONY: run
 run:
-	go run cmd/main.go
+	go run cmd/ui/main.go
+
+.PHONY: run-server
+run-server:
+	go run cmd/server/main.go
 
 .PHONY: test
 test:
@@ -19,12 +23,12 @@ test:
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-s -w" -o bin/$(APP_NAME)-$(GOOS)-$(GOARCH) cmd/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-s -w" -o bin/$(APP_NAME)-$(GOOS)-$(GOARCH) cmd/ui/main.go
 
 .PHONY: build-all
 build-all:
 	@for os in linux darwin windows; do \
-		GOOS=$$os GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$$os-amd64 cmd/main.go; \
+		GOOS=$$os GOARCH=amd64 go build -ldflags="-s -w" -o bin/$(APP_NAME)-$$os-amd64 cmd/ui/main.go; \
 	done
 
 .PHONY: clean
