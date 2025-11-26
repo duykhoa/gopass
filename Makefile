@@ -11,7 +11,7 @@ default: run
 
 .PHONY: run
 run:
-	go run cmd/ui/main.go
+	go run cmd/tui/main.go
 
 .PHONY: run-server
 run-server:

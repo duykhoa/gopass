@@ -174,7 +174,6 @@ func parseFieldsFromContent(content string, tmpl *service.Template) map[string]s
 	return values
 }
 
-
 func checkPasswordStoreAndInitIfNotExist(a *ui.App) fyne.CanvasObject {
 	// Show setup message and Init button
 	info := widget.NewLabel("Password store is not set up yet. Please press Init to start.")

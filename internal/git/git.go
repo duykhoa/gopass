@@ -31,12 +31,12 @@ func SyncWithRemote(storeDir string) error {
 		if errors.Is(err, git.ErrEmptyCommit) {
 			return nil
 		}
-		
+
 		return fmt.Errorf("git commit failed: %w", err)
 	}
 	// Push to remote
 	err = repo.Push(&git.PushOptions{RemoteName: "origin"})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate){
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("git push failed: %w", err)
 	}
 

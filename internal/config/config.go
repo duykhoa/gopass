@@ -45,8 +45,8 @@ func loadConfig() {
 		gpgId = strings.TrimSpace(string(gpgIdBytes))
 	}
 
-	// This is a hardcoded passphrase encryption key, it is 
-	// probably a good idea to generate a random passphrase 
+	// This is a hardcoded passphrase encryption key, it is
+	// probably a good idea to generate a random passphrase
 	// in the first time running the app
 	passphraseKey = []byte("gopass-demo-static-key-32bytes!!")
 }

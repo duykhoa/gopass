@@ -84,7 +84,7 @@ func DecryptCachedPassphrase(cachePath string) (string, bool, error) {
 	}
 
 	slog.Info("Decrypted cached passphrase", "expires_at", cache.ExpiresAt, "time now", time.Now())
-	
+
 	if time.Now().After(cache.ExpiresAt) {
 		return "", false, nil
 	}

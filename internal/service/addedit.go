@@ -25,7 +25,7 @@ func AddOrEditEntry(req AddEditRequest) AddEditResult {
 	if req.EntryName == "" {
 		return AddEditResult{fmt.Errorf("entry name cannot be empty")}
 	}
-	
+
 	var content strings.Builder
 	if req.TemplateName == "Free Form" {
 		content.WriteString(req.Fields["content"])

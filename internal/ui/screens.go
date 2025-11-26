@@ -7,7 +7,7 @@ import (
 )
 
 type App struct {
-	Window fyne.Window
+	Window  fyne.Window
 	Screens *Screens
 }
 
@@ -43,5 +43,3 @@ func (s *Screens) AddScreen(name string, screenFunc ScreenFunction) {
 	// just overwrite if exists
 	s.Screens[name] = screenFunc
 }
-
-
