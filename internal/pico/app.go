@@ -3,9 +3,12 @@ package pico
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/duykhoa/gopass/internal/config"
+	"github.com/duykhoa/gopass/internal/service"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -28,6 +31,31 @@ type controller struct {
 	msgChan chan Msg
 }
 
+func (c *controller) CheckAndRender() {
+	_, err := os.Stat(config.PasswordStoreDir())
+
+	if err != nil {
+		slog.Error("TODO: password store dir doesn't exist")
+
+		return
+	}
+
+	c.ShowMainPage()
+}
+
+func (c *controller) ShowMainPage() {
+	c.View.ShowPage("main")
+
+	entries, err := service.ListPasswordEntries(config.PasswordStoreDir())
+
+	if err != nil {
+		slog.Error("Failed to load password entries", slog.Any("error", err))
+		return
+	}
+
+	slog.Info("Entries list", slog.Any("data", entries))
+}
+
 func (c *controller) ListenToEvents() error {
 	for {
 		select {
@@ -41,54 +69,30 @@ func (c *controller) ListenToEvents() error {
 
 			switch msg.Type {
 			case MsgType_UpdateStatus:
-				statusLine, err := c.View.GetComponentByID("status")
-				statusText := statusLine.(*tview.TextView)
-
-				if err != nil {
-					return err
-				}
-
-				statusText.SetText(msg.Content)
+				c.View.SetStatusText(msg.Content)
 
 				close(c.quit)
 			}
 		}
 	}
-}
-
-type view struct {
-	app        *tview.Application
-	components map[string]tview.Primitive
-	msgChan    chan Msg
-}
-
-func WrapColor(str string, color string) string {
-	return fmt.Sprintf("[%s]%s[white]", color, str)
-}
-
-func (v *view) RegisterComponent(id string, comp tview.Primitive) error {
-	if _, ok := v.components[id]; ok {
-		return fmt.Errorf("component with id: %s is existed", id)
-	}
-
-	v.components[id] = comp
 
 	return nil
 }
 
-func (v *view) GetComponentByID(id string) (tview.Primitive, error) {
-	comp, ok := v.components[id]
-
-	if !ok {
-		return nil, fmt.Errorf("component with ID: %s doesn't exist", id)
-	}
-
-	return comp, nil
+type view struct {
+	app             *tview.Application
+	pages           *tview.Pages
+	msgChan         chan Msg
+	passwordEntries *tview.TextView
+	passwordDetail  *tview.TextView
+	statusText      *tview.TextView
 }
 
 func (v *view) Render() error {
-	var err error
+	return v.app.Run()
+}
 
+func (v *view) Init() {
 	headerLine := tview.NewTextView().SetTextAlign(tview.AlignRight)
 	addMenu := fmt.Sprintf("%sdd", WrapColor("A", "#ff0000"))
 	syncMenu := fmt.Sprintf("%sync", WrapColor("S", "#ff0000"))
@@ -97,17 +101,17 @@ func (v *view) Render() error {
 
 	statusText := tview.NewTextView().SetText(WrapColor("Password entries are loaded, have a good day!", "blue")).
 		SetTextAlign(tview.AlignLeft).SetDynamicColors(true)
-	v.RegisterComponent("status", statusText)
+	v.statusText = statusText
 
 	headerLine.SetText(
 		fmt.Sprintf("%s\t%s\t%s\t%s\t", addMenu, syncMenu, quitMenu, helpMenu),
 	).SetDynamicColors(true)
 
-	passEntries := tview.NewTextView().SetText("PasswordEntries")
-	v.RegisterComponent("password_entries", passEntries)
+	passEntries := tview.NewTextView().SetText("Password Entries")
+	v.passwordEntries = passEntries
 
-	passDetail := tview.NewTextView().SetText("PasswordDetail")
-	v.RegisterComponent("password_detail", passDetail)
+	passDetail := tview.NewTextView().SetText("Password Detail")
+	v.passwordDetail = passDetail
 
 	grid := tview.NewGrid().SetColumns(40, 0).SetRows(2, 0, 1).SetBorders(true)
 	grid.AddItem(headerLine, 0, 0, 1, 2, 0, 0, false)
@@ -115,45 +119,41 @@ func (v *view) Render() error {
 	grid.AddItem(passDetail.SetTextAlign(tview.AlignLeft), 1, 1, 1, 1, 0, 0, false)
 	grid.AddItem(statusText, 2, 0, 1, 2, 0, 0, false)
 
-	pages := tview.NewPages()
+	v.pages = tview.NewPages()
 
-	pages.AddPage("main", grid, false, true)
-	pages.ShowPage("main")
+	v.pages.AddPage("main", grid, false, true)
 
 	v.app.SetRoot(grid, true)
 
 	v.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		statusLine, err := v.GetComponentByID("status")
-		statusText := statusLine.(*tview.TextView)
-
-		if err != nil {
-			slog.Error("failed to get component status")
-			return event
-		}
-
 		switch event.Key() {
 		case tcell.KeyCtrlA:
-			statusText.SetText("user press a")
+			v.statusText.SetText("user press a")
 		case tcell.KeyCtrlS:
-			statusText.SetText("user press s")
+			v.statusText.SetText("user press s")
 		case tcell.KeyCtrlQ:
 			v.msgChan <- Msg{
 				Type:    MsgType_UpdateStatus,
 				Content: "User presses CtrlQ, exiting!",
 			}
 		case tcell.KeyCtrlH:
-			statusText.SetText("user press h")
+			v.statusText.SetText("user press h")
 		}
 
 		return event
 	})
+}
 
-	err = v.app.Run()
+func (v *view) ShowPage(name string) {
+	v.pages.ShowPage(name)
+}
 
-	return err
+func (v *view) SetStatusText(status string) {
+	v.statusText.SetText(status)
 }
 
 type model struct {
+	Entries struct{}
 }
 
 type app struct {
@@ -162,6 +162,8 @@ type app struct {
 
 func (a *app) Run() error {
 	var err error
+
+	a.Controller.View.Init()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -178,6 +180,7 @@ func (a *app) Run() error {
 	go func() {
 		defer wg.Done()
 
+		a.Controller.CheckAndRender()
 		err = a.Controller.ListenToEvents()
 		if err != nil {
 			slog.Error("Error in ListenToEvents", slog.Any("error", err))
@@ -195,9 +198,8 @@ func NewPico() *app {
 	quit := make(chan struct{})
 
 	view := &view{
-		msgChan:    msgChan,
-		app:        tview.NewApplication(),
-		components: make(map[string]tview.Primitive),
+		msgChan: msgChan,
+		app:     tview.NewApplication(),
 	}
 
 	model := &model{}
@@ -214,4 +216,8 @@ func NewPico() *app {
 	}
 
 	return a
+}
+
+func WrapColor(str string, color string) string {
+	return fmt.Sprintf("[%s]%s[white]", color, str)
 }

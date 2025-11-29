@@ -9,7 +9,7 @@ import (
 
 func main() {
 	// Configure slog
-	file, err := os.OpenFile("application.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile("logs/application.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		panic("Can't create log file")
 	}
