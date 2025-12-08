@@ -53,17 +53,19 @@ func (c *controller) ShowMainPage() {
 		return
 	}
 
+	c.Model.SetEntries(entries)
+
 	slog.Info("Entries list", slog.Any("data", entries))
 }
 
-func (c *controller) ListenToEvents() error {
+func (c *controller) ListenToEvents() {
 	for {
 		select {
 		case <-c.quit:
 			slog.Debug("Controller receives quit signal, return nil")
 			time.Sleep(300 * time.Millisecond) // Give some time for UI to show the last status update
 			c.View.app.Stop()
-			return nil
+			return
 		case msg := <-c.msgChan:
 			slog.Info("Receive msg from msgChan", slog.Any("msg", msg))
 
@@ -75,17 +77,38 @@ func (c *controller) ListenToEvents() error {
 			}
 		}
 	}
+}
+
+type modelUpdater interface {
+	ModelDidUpdate(state model) error
+}
+
+type passwordEntriesUpdater struct {
+	view            *view
+	passwordEntries *tview.List
+}
+
+func (p *passwordEntriesUpdater) ModelDidUpdate(state model) error {
+	slog.Debug("passwordEntriesupdater is called", slog.Any("state", state))
+
+	p.view.app.QueueUpdateDraw(func() {
+		p.passwordEntries.Clear()
+		for _, entry := range state.Entries {
+			p.passwordEntries.AddItem(entry, "", 0, nil)
+		}
+	})
 
 	return nil
 }
 
 type view struct {
-	app             *tview.Application
-	pages           *tview.Pages
-	msgChan         chan Msg
-	passwordEntries *tview.TextView
-	passwordDetail  *tview.TextView
-	statusText      *tview.TextView
+	app                    *tview.Application
+	pages                  *tview.Pages
+	msgChan                chan Msg
+	passwordEntries        *tview.List
+	passwordEntriesUpdater modelUpdater
+	passwordDetail         *tview.TextView
+	statusText             *tview.TextView
 }
 
 func (v *view) Render() error {
@@ -107,15 +130,19 @@ func (v *view) Init() {
 		fmt.Sprintf("%s\t%s\t%s\t%s\t", addMenu, syncMenu, quitMenu, helpMenu),
 	).SetDynamicColors(true)
 
-	passEntries := tview.NewTextView().SetText("Password Entries")
+	passEntries := tview.NewList()
 	v.passwordEntries = passEntries
+	v.passwordEntriesUpdater = &passwordEntriesUpdater{
+		passwordEntries: passEntries,
+		view:            v,
+	}
 
 	passDetail := tview.NewTextView().SetText("Password Detail")
 	v.passwordDetail = passDetail
 
 	grid := tview.NewGrid().SetColumns(40, 0).SetRows(2, 0, 1).SetBorders(true)
 	grid.AddItem(headerLine, 0, 0, 1, 2, 0, 0, false)
-	grid.AddItem(passEntries, 1, 0, 1, 1, 0, 0, false)
+	grid.AddItem(passEntries, 1, 0, 1, 1, 0, 0, true)
 	grid.AddItem(passDetail.SetTextAlign(tview.AlignLeft), 1, 1, 1, 1, 0, 0, false)
 	grid.AddItem(statusText, 2, 0, 1, 2, 0, 0, false)
 
@@ -153,7 +180,20 @@ func (v *view) SetStatusText(status string) {
 }
 
 type model struct {
-	Entries struct{}
+	Entries    []string
+	Loading    bool
+	NewEntry   struct{}
+	Subscriber *[]modelUpdater
+}
+
+func (m *model) SetEntries(entries []string) {
+	m.Entries = entries
+
+	if m.Subscriber != nil {
+		for _, sub := range *m.Subscriber {
+			sub.ModelDidUpdate(*m)
+		}
+	}
 }
 
 type app struct {
@@ -162,8 +202,6 @@ type app struct {
 
 func (a *app) Run() error {
 	var err error
-
-	a.Controller.View.Init()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -181,10 +219,7 @@ func (a *app) Run() error {
 		defer wg.Done()
 
 		a.Controller.CheckAndRender()
-		err = a.Controller.ListenToEvents()
-		if err != nil {
-			slog.Error("Error in ListenToEvents", slog.Any("error", err))
-		}
+		a.Controller.ListenToEvents()
 	}()
 
 	wg.Wait()
@@ -201,8 +236,11 @@ func NewPico() *app {
 		msgChan: msgChan,
 		app:     tview.NewApplication(),
 	}
+	view.Init()
 
-	model := &model{}
+	model := &model{
+		Subscriber: &[]modelUpdater{view.passwordEntriesUpdater},
+	}
 
 	controller := &controller{
 		View:    view,
