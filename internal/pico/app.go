@@ -16,7 +16,9 @@ import (
 type MsgType string
 
 const (
-	MsgType_UpdateStatus = "MsgTypeUpdateStatus"
+	MsgType_UpdateStatus        = "MsgTypeUpdateStatus"
+	MsgType_EntrySelected       = "MsgTypeEntrySelected"
+	MsgType_PassphraseSubmitted = "MsgTypePassphraseSubmitted"
 )
 
 type Msg struct {
@@ -74,9 +76,59 @@ func (c *controller) ListenToEvents() {
 				c.View.SetStatusText(msg.Content)
 
 				close(c.quit)
+			case MsgType_EntrySelected:
+				c.handleEntrySelected(msg.Content)
+			case MsgType_PassphraseSubmitted:
+				c.handlePassphraseSubmitted(msg.Content)
 			}
 		}
 	}
+}
+
+func (c *controller) handleEntrySelected(entry string) {
+	slog.Info("Entry selected", slog.String("entry", entry))
+	c.Model.SetSelectedEntry(entry)
+
+	// Check if passphrase is cached and valid
+	cachedPassphrase, valid := service.GetCachedPassphrase()
+	if valid && cachedPassphrase != "" {
+		// Decrypt with cached passphrase
+		result := service.DecryptAndCacheIfOk(entry, cachedPassphrase)
+		if result.Err == nil {
+			c.Model.SetDecryptedContent(result.Plaintext)
+			c.View.SetPasswordDetail(result.Plaintext)
+			c.View.SetStatusText("Entry decrypted successfully")
+			return
+		}
+	}
+
+	// Cache is invalid or empty, show passphrase page
+	c.Model.returnedPage = "main"
+	c.View.ShowPage("passphrase")
+	c.View.SetStatusText("Enter passphrase to decrypt")
+}
+
+func (c *controller) handlePassphraseSubmitted(passphrase string) {
+	slog.Info("Passphrase submitted", slog.String("entry", c.Model.SelectedEntry))
+
+	if c.Model.SelectedEntry == "" {
+		c.View.SetStatusText("No entry selected")
+		return
+	}
+
+	// Attempt decryption with provided passphrase
+	result := service.DecryptAndCacheIfOk(c.Model.SelectedEntry, passphrase)
+	if result.Err != nil {
+		slog.Error("Decryption failed", slog.Any("error", result.Err))
+		c.View.SetStatusText("Decryption failed, please try again")
+		return
+	}
+	// Decryption successful
+	c.Model.SetDecryptedContent(result.Plaintext)
+	c.View.SetPasswordDetail(result.Plaintext)
+	c.View.ClearPassphraseInput()
+	c.View.ShowPage("main")
+	c.View.SetStatusText("Entry decrypted successfully")
 }
 
 type modelUpdater interface {
@@ -109,6 +161,7 @@ type view struct {
 	passwordEntriesUpdater modelUpdater
 	passwordDetail         *tview.TextView
 	statusText             *tview.TextView
+	passphraseInput        *tview.InputField
 }
 
 func (v *view) Render() error {
@@ -137,10 +190,27 @@ func (v *view) Init() {
 		view:            v,
 	}
 
+	// Add Enter key handler to decrypt selected entry
+	passEntries.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEnter {
+			entry, _ := passEntries.GetItemText(passEntries.GetCurrentItem())
+			slog.Info("Entry selected", slog.String("entry", entry), slog.Int("current_item", passEntries.GetCurrentItem()))
+
+			if entry != "" {
+				v.msgChan <- Msg{
+					Type:    MsgType_EntrySelected,
+					Content: entry,
+				}
+			}
+			return nil
+		}
+		return event
+	})
+
 	passDetail := tview.NewTextView().SetText("Password Detail")
 	v.passwordDetail = passDetail
 
-	grid := tview.NewGrid().SetColumns(40, 0).SetRows(2, 0, 1).SetBorders(true)
+	grid := tview.NewGrid().SetColumns(-1, -1).SetRows(2, -1, 1).SetBorders(true).SetGap(0, 0)
 	grid.AddItem(headerLine, 0, 0, 1, 2, 0, 0, false)
 	grid.AddItem(passEntries, 1, 0, 1, 1, 0, 0, true)
 	grid.AddItem(passDetail.SetTextAlign(tview.AlignLeft), 1, 1, 1, 1, 0, 0, false)
@@ -148,11 +218,72 @@ func (v *view) Init() {
 
 	v.pages = tview.NewPages()
 
-	v.pages.AddPage("main", grid, false, true)
+	v.pages.AddPage("main", grid, true, true)
 
-	v.app.SetRoot(grid, true)
+	// Create passphrase page with centered layout
+	submitPassphrase := func() {
+		// This function will be called by both Enter key and Submit button
+	}
+
+	passphraseInput := tview.NewInputField().
+		SetLabel("Passphrase: ").
+		SetFieldWidth(30).
+		SetMaskCharacter('*').
+		SetFieldBackgroundColor(tcell.ColorBlack).
+		SetFieldTextColor(tcell.ColorWhite).
+		SetLabelColor(tcell.ColorWhite).
+		SetDoneFunc(func(key tcell.Key) {
+			if key == tcell.KeyEnter {
+				submitPassphrase()
+			}
+		})
+	v.passphraseInput = passphraseInput
+
+	submitPassphrase = func() {
+		passphrase := passphraseInput.GetText()
+		slog.Info("Passphrase submitted", slog.String("passphrase", passphrase))
+
+		// Send message to controller via msgChan
+		v.msgChan <- Msg{
+			Type:    MsgType_PassphraseSubmitted,
+			Content: passphrase,
+		}
+	}
+
+	passphraseSubmitBtn := tview.NewButton("Submit").SetSelectedFunc(submitPassphrase)
+
+	// Create a form-like container for better layout control
+	passphraseForm := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(passphraseInput, 1, 0, true).
+		AddItem(tview.NewBox(), 1, 0, false).
+		AddItem(passphraseSubmitBtn, 1, 0, false)
+
+	// Center the form on the screen
+	passphraseOuter := tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(nil, 0, 1, false).
+		AddItem(
+			tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(nil, 0, 1, false).
+				AddItem(passphraseForm, 0, 0, true).
+				AddItem(nil, 0, 1, false),
+			0, 1, false,
+		).
+		AddItem(nil, 0, 1, false)
+
+	v.pages.AddPage("passphrase", passphraseOuter, true, false)
+
+	v.app.SetRoot(v.pages, true)
 
 	v.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// Get current page name
+		currentPage, _ := v.pages.GetFrontPage()
+
+		// Only capture global shortcuts on main page
+		// Let passphrase page handle its own input
+		if currentPage == "passphrase" {
+			return event
+		}
+
 		switch event.Key() {
 		case tcell.KeyCtrlA:
 			v.statusText.SetText("user press a")
@@ -172,22 +303,65 @@ func (v *view) Init() {
 }
 
 func (v *view) ShowPage(name string) {
-	v.pages.ShowPage(name)
+	slog.Debug("Show page", slog.String("page", name))
+	v.pages.SwitchToPage(name)
+
+	// Set focus to the appropriate element when switching pages
+	if name == "passphrase" {
+		v.app.SetFocus(v.passphraseInput)
+	}
+
+	v.app.Draw()
 }
 
 func (v *view) SetStatusText(status string) {
 	v.statusText.SetText(status)
 }
 
+func (v *view) SetPasswordDetail(content string) {
+	v.app.QueueUpdateDraw(func() {
+		v.passwordDetail.SetText(content)
+	})
+}
+
+func (v *view) ClearPassphraseInput() {
+	v.app.QueueUpdateDraw(func() {
+		v.passphraseInput.SetText("")
+	})
+}
+
 type model struct {
-	Entries    []string
-	Loading    bool
-	NewEntry   struct{}
-	Subscriber *[]modelUpdater
+	Entries          []string
+	Loading          bool
+	NewEntry         struct{}
+	Subscriber       *[]modelUpdater
+	returnedPage     string
+	SelectedEntry    string
+	DecryptedContent string
 }
 
 func (m *model) SetEntries(entries []string) {
 	m.Entries = entries
+
+	if m.Subscriber != nil {
+		for _, sub := range *m.Subscriber {
+			sub.ModelDidUpdate(*m)
+		}
+	}
+}
+
+func (m *model) SetSelectedEntry(entry string) {
+	m.SelectedEntry = entry
+
+	if m.Subscriber != nil {
+		for _, sub := range *m.Subscriber {
+			sub.ModelDidUpdate(*m)
+		}
+	}
+}
+
+func (m *model) SetDecryptedContent(content string) {
+	m.DecryptedContent = content
 
 	if m.Subscriber != nil {
 		for _, sub := range *m.Subscriber {
@@ -236,6 +410,7 @@ func NewPico() *app {
 		msgChan: msgChan,
 		app:     tview.NewApplication(),
 	}
+
 	view.Init()
 
 	model := &model{
